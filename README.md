@@ -6,4 +6,4 @@
 SunoSync is the ultimate tool for archiving your AI-generated masterpieces.
 Download your entire library with complete ID3 tags, lyrics, and hi-res artwork.
 
-[⬇️ Download Latest Version](#) | [🐛 Report Bug](#) | [☕ Buy Me a Coffee](#)
+[⬇️ Download Latest Version](#) | [🐛 Report Bug](#) | [☕ Buy Me a Coffee](buymeacoffee.com/audioalchemy)
