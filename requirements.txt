@@ -1,0 +1,4 @@
+requests
+mutagen
+pyperclip
+pillow
