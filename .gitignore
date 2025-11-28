@@ -1,0 +1,115 @@
+# Visual Studio / .NET / C# .gitignore
+# Recommended for Visual Studio projects on Windows (and cross-platform .NET)
+
+# User-specific files
+*.user
+*.userosscache
+*.suo
+*.sln.docstates
+
+# Build results
+[Bb]in/
+[Oo]bj/
+out/
+artifacts/
+
+# Visual Studio temp files
+*.vsp
+*.vspscc
+*.vssscc
+
+# VS Code
+.vscode/
+
+# Rider/JetBrains
+.idea/
+*.sln.iml
+*.DotSettings.user
+_ReSharper*/
+*.ReSharper*/
+
+# NuGet packages
+*.nupkg
+packages/
+project.lock.json
+project.fragment.lock.json
+.nuget/
+.nuget/packages/
+
+# Dotnet publish / local tool caches
+publish/
+*.Publish.xml
+*.publishsettings
+*.pubxml
+*.pubxml.user
+.dotnet/
+.dotnet/tools/
+
+# Test results / coverage
+TestResults/
+*.trx
+*.coverage
+coverage/
+coverage.opencover.xml
+coverage*.xml
+
+# Logs, db and temporary files
+*.log
+*.sql
+*.sqlite
+*.db
+*.bak
+*.backup
+*.pid
+
+# Local secrets and settings
+secrets.json
+local.settings.json
+appsettings.*.Development.json
+appsettings.*.Local.json
+
+# Entity Framework
+*.efmodel
+
+# npm / frontend
+node_modules/
+npm-debug.log*
+yarn-error.log
+.pnp.*
+.pnp.js
+dist/
+build/
+
+# Python virtual envs (if present)
+venv/
+ENV/
+env/
+.venv/
+
+# OS files
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Editor swap/temp files
+*~ 
+*.swp
+*.swo
+*.tmp
+
+# Coverage & profiler outputs
+*.coverage
+*.coveragexml
+*.prof
+
+# Sensitive or local IDE files
+*.key
+*.pem
+*.crt
+
+# Lock files that should not be committed (optional)
+*.lock.json
+
+.history/
+# End of file
