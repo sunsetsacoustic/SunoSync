@@ -5,6 +5,7 @@ import requests
 from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import urlparse
 import threading
+import re
 
 from suno_utils import RateLimiter, get_downloaded_uuids, embed_metadata, sanitize_filename, get_unique_filename
 
@@ -47,6 +48,12 @@ class DownloaderSignals:
 
 
 class SunoDownloader:
+    STEM_INDICATORS = [
+        "(bass)", "(drums)", "(backing vocal)", "(backing vocals)", "(vocals)", "(instrumental)",
+        "(woodwinds)", "(brass)", "(fx)", "(synth)", "(strings)", 
+        "(percussion)", "(keyboard)", "(guitar)"
+    ]
+
     def __init__(self):
         self.signals = DownloaderSignals()
         self.stop_event = threading.Event()
@@ -55,7 +62,8 @@ class SunoDownloader:
 
     def configure(self, token, directory, max_pages, start_page, 
                   organize_by_month, embed_metadata_enabled, prefer_wav, download_delay, 
-                  filter_settings=None, scan_only=False, target_songs=None, save_lyrics=True):
+                  filter_settings=None, scan_only=False, target_songs=None, save_lyrics=True,
+                  organize_by_track=False, stems_only=False):
         self.config = {
             "token": token,
             "directory": directory,
@@ -68,7 +76,9 @@ class SunoDownloader:
             "download_delay": max(0.0, float(download_delay)),
             "filter_settings": filter_settings or {},
             "scan_only": scan_only,
-            "target_songs": target_songs or [] # List of dicts or UUIDs
+            "target_songs": target_songs or [], # List of dicts or UUIDs
+            "organize_by_track": organize_by_track,
+            "stems_only": stems_only
         }
         self.rate_limiter = RateLimiter(self.config["download_delay"])
 
@@ -278,6 +288,10 @@ class SunoDownloader:
                     filter_type = filters.get("type", "all")
                     search_text = filters.get("search_text", "").strip().lower()
 
+                    # Override: If Stems Only is active, disable Hide Stems
+                    if self.config.get("stems_only"):
+                        filter_hide_stems = False
+
                     print(f"--- STARTING FILTER DEBUG ---")
                     print(f"Filters Active: Liked={filter_liked_only}, NoStems={filter_hide_stems}, NoTrash={filter_exclude_trash}")
 
@@ -304,23 +318,7 @@ class SunoDownloader:
                         # It is liked if Boolean is True OR Reaction is 'L' OR Vote is 'up'
                         is_liked = is_liked_bool or (reaction_type == "L") or (vote == "up")
 
-                        # Stem Check
-                        metadata = song_data.get("metadata", {}) or {}
-                        if metadata is None: metadata = {}
-                        clip_type = metadata.get("type", "")
-                        top_type = song_data.get("type", "")
-                        
-                        stem_indicators = [
-                            "(bass)", "(drums)", "(backing vocal)", "(backing vocals)", "(vocals)", "(instrumental)",
-                            "(woodwinds)", "(brass)", "(fx)", "(synth)", "(strings)", 
-                            "(percussion)", "(keyboard)", "(guitar)"
-                        ]
-                        title_lower = title.lower()
-                        is_stem_title = any(ind in title_lower for ind in stem_indicators)
-                        
-                        is_stem = (clip_type in ["gen_stem", "stem"] or 
-                                   "stem" in top_type or 
-                                   is_stem_title)
+                        is_stem = self._is_stem(song_data)
 
                         # Trash Check
                         is_trashed = song_data.get("is_trashed", False)
@@ -346,6 +344,10 @@ class SunoDownloader:
 
                         # 2. Stem Filter
                         if filter_hide_stems and is_stem:
+                            continue
+
+                        # 2b. Stems Only Filter
+                        if self.config.get("stems_only") and not is_stem:
                             continue
 
                         # 3. Liked Filter
@@ -526,6 +528,17 @@ class SunoDownloader:
             except:
                 pass
 
+        if self.config.get("organize_by_track") and self._is_stem(clip):
+            try:
+                # Create a subfolder with the song title (stripped of stem indicators)
+                base_title = self._get_base_title(title)
+                safe_title = sanitize_filename(base_title)
+                target_dir = os.path.join(target_dir, safe_title)
+                if not os.path.exists(target_dir):
+                    os.makedirs(target_dir)
+            except:
+                pass
+
         ext = file_ext or ".mp3"
         fname = sanitize_filename(title) + ext
         out_path = os.path.join(target_dir, fname)
@@ -590,6 +603,29 @@ class SunoDownloader:
         except Exception as exc:
             self._log(f"  Metadata error: {exc}", "error")
             self.signals.song_finished.emit(uuid, True, out_path) # Still success even if metadata fails
+
+    def _is_stem(self, song_data):
+        """Check if song is a stem."""
+        metadata = song_data.get("metadata", {}) or {}
+        if metadata is None: metadata = {}
+        clip_type = metadata.get("type", "")
+        top_type = song_data.get("type", "")
+        title = song_data.get("title", "") or ""
+        
+        title_lower = title.lower()
+        is_stem_title = any(ind in title_lower for ind in self.STEM_INDICATORS)
+        
+        return (clip_type in ["gen_stem", "stem"] or 
+                "stem" in top_type or 
+                is_stem_title)
+
+    def _get_base_title(self, title):
+        """Strip stem indicators from title to get base song name."""
+        clean_title = title
+        for ind in self.STEM_INDICATORS:
+            pattern = re.escape(ind)
+            clean_title = re.sub(pattern, "", clean_title, flags=re.IGNORECASE)
+        return clean_title.strip()
 
     def _resolve_audio_stream(self, clip, title, headers):
         prefer_wav = self.config.get("prefer_wav")

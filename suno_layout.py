@@ -95,6 +95,9 @@ def create_settings_card(parent, app, base_path):
     
     app.save_lyrics_var = tk.BooleanVar(value=True)
     add_toggle(1, 1, "Save Lyrics (.txt)", app.save_lyrics_var, "Save lyrics to a separate text file")
+
+    app.track_folder_var = tk.BooleanVar(value=False)
+    add_toggle(2, 0, "Stem Track Folder", app.track_folder_var, "Create a folder for each track")
     
     return card
 

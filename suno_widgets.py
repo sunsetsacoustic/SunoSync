@@ -621,6 +621,7 @@ class FilterPopup(tk.Toplevel):
         self._add_checkbox(content, "Liked", "liked", current_filters.get("liked", False))
         self._add_checkbox(content, "Hide Disliked", "hide_disliked", current_filters.get("hide_disliked", True))
         self._add_checkbox(content, "Hide Stems", "hide_gen_stems", current_filters.get("hide_gen_stems", True))
+        self._add_checkbox(content, "Stems Only", "stems_only", current_filters.get("stems_only", False))
         self._add_checkbox(content, "Hide Clips", "hide_studio_clips", current_filters.get("hide_studio_clips", True))
         self._add_checkbox(content, "Public", "is_public", current_filters.get("is_public", False))
         self._add_checkbox(content, "Trash", "trashed", current_filters.get("trashed", False))

@@ -51,6 +51,7 @@ class DownloaderTab(tk.Frame):
         self.gui_queue = queue.Queue()
         self.preloaded_songs = {}  # uuid -> song_data
         self.is_preloaded = False
+        self.filter_settings = {}
         
         self.create_widgets()
         self.load_config_into_ui()
@@ -354,6 +355,7 @@ class DownloaderTab(tk.Frame):
         self.rate_limit_var.set(c.get("download_delay", 0.5))
         self.max_pages_var.set(c.get("max_pages", 0))
         self.start_page_var.set(c.get("start_page", 0))
+        self.track_folder_var.set(c.get("track_folder", False))
         
         # Load filters
         self.filter_settings = c.get("filter_settings", {
@@ -372,6 +374,7 @@ class DownloaderTab(tk.Frame):
         self.download_wav_var.trace_add("write", self.update_accordion_summaries)
         self.embed_thumb_var.trace_add("write", self.update_accordion_summaries)
         self.organize_var.trace_add("write", self.update_accordion_summaries)
+        self.track_folder_var.trace_add("write", self.update_accordion_summaries)
 
     def update_accordion_summaries(self, *args):
         """Update the summary chips on accordion headers."""
@@ -393,7 +396,13 @@ class DownloaderTab(tk.Frame):
             settings_summary.append("Meta: ON")
             
         if self.organize_var.get():
-            settings_summary.append("Organized")
+            settings_summary.append("Monthly")
+            
+        if self.track_folder_var.get():
+            settings_summary.append("TrackFolder")
+            
+        if self.filter_settings.get("stems_only"):
+            settings_summary.append("StemsOnly")
             
         self.settings_card.set_summary(f"[{' '.join(settings_summary)}]")
 
@@ -408,6 +417,7 @@ class DownloaderTab(tk.Frame):
         c.set("prefer_wav", self.download_wav_var.get())
         c.set("max_pages", self.max_pages_var.get())
         c.set("start_page", self.start_page_var.get())
+        c.set("track_folder", self.track_folder_var.get())
         c.set("filter_settings", self.filter_settings)
         c.save_config()
         
@@ -431,6 +441,7 @@ class DownloaderTab(tk.Frame):
         self.filter_settings.update(new_filters)
         self._update_filter_btn_text()
         self.save_config()
+        self.update_accordion_summaries()
 
     def _update_filter_btn_text(self):
         if hasattr(self, 'filter_btn'):
@@ -584,7 +595,9 @@ class DownloaderTab(tk.Frame):
             prefer_wav=self.download_wav_var.get(),
             download_delay=self.rate_limit_var.get(),
             filter_settings=self.filter_settings,
-            scan_only=True
+            scan_only=True,
+            organize_by_track=self.track_folder_var.get(),
+            stems_only=self.filter_settings.get("stems_only")
         )
         
         thread = threading.Thread(target=self.downloader.run, daemon=True)
@@ -659,7 +672,9 @@ class DownloaderTab(tk.Frame):
             prefer_wav=self.download_wav_var.get(),
             download_delay=self.rate_limit_var.get(),
             filter_settings=self.filter_settings,
-            target_songs=target_songs
+            target_songs=target_songs,
+            organize_by_track=self.track_folder_var.get(),
+            stems_only=self.filter_settings.get("stems_only")
         )
         
         thread = threading.Thread(target=self.downloader.run, daemon=True)
