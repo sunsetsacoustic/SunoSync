@@ -55,6 +55,21 @@ Buy the exe here : https://justinmurray99.gumroad.com/l/rrxty
     *   Copy the value of the `__client` cookie.
 5.  **Download:** Paste your token and click **Start Download**.
 
+   
+ �️ Security & VirusTotal Transparency
+
+
+
+We believe in 100% transparency. Because SunoSync is an indie tool built with Python (and not a digitally signed corporation app), a few generic antivirus filters may flag it as "unknown."
+
+The Reality: ✅ 69/72 Security Vendors found NO issues (Clean) ⚠️ 3/72 flagged as "False Positive" (Generic/Heuristic)
+
+These flags occur because the app is "unsigned" (common for indie devs). You can verify the file yourself below:
+
+➢ Click here to view the live VirusTotal Report
+
+
+
 ## ☕ Support
 
 Created by **@InternetThot**
