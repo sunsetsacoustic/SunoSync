@@ -74,7 +74,7 @@ We believe in 100% transparency. Because SunoSync is an indie tool built with Py
 
 These flags occur because the app is "unsigned" (common for indie devs). You can verify the file yourself below:
 
-[➢ Click here to view the live VirusTotal Report](https://www.virustotal.com/gui/file/008405d9f373cae2de87f8208094ecaff4532123440e6c857a05e0a8831d25d5/summary)
+[➢ Click here to view the live VirusTotal Report](https://www.virustotal.com/gui/file/691ec3ad17ff18171b2499ed6c460db0fb1fb6015223eaa37c0cf06cdb92fc30?nocache=1)
 
 ## ☕ Support
 
