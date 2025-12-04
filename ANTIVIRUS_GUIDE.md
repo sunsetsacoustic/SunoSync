@@ -9,7 +9,7 @@ This guide explains the changes made to reduce false positives from antivirus so
 - **Why**: UPX compression is a major cause of false positives. Many malware uses UPX, so AV software flags UPX-compressed executables more aggressively.
 
 ### 2. **Added Version Information**
-- **Added**: `version_info.py` with proper Windows version metadata
+- **Added**: Version information embedded directly in `SunoApi.spec` with proper Windows version metadata
 - **Why**: Executables without version info look suspicious. Proper version info makes the file appear more legitimate.
 
 ### 3. **Proper File Metadata**
@@ -66,4 +66,5 @@ With these changes:
   - Makes network requests
   - Accesses the file system
 - Your app does all of these (legitimately), so some detections may persist
+
 

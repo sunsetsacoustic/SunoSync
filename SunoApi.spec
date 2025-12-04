@@ -9,6 +9,11 @@ datas = []
 binaries = []
 hiddenimports = ['mutagen', 'requests', 'colorama', 'pyperclip', 'PIL', 'PIL._tkinter_finder']
 
+# Include resources folder
+import os
+if os.path.exists('resources'):
+    datas.append(('resources', 'resources'))
+
 tmp_ret = collect_all('mutagen')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 
@@ -45,7 +50,7 @@ version_info = VSVersionInfo(
 )
 
 a = Analysis(
-    ['suno_api_gui.py'],
+    ['main.py'],
     pathex=[],
     binaries=binaries,
     datas=datas,
@@ -65,14 +70,15 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='SunoApiDownloader',
+    name='SunoSyncV2',
+    icon='resources/icon.ico',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
     upx=False,  # Disable UPX compression - major cause of false positives
     upx_exclude=[],
     runtime_tmpdir=None,
-    console=False,
+    console=False,  # Disable console for clean build (enable if debugging needed)
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,

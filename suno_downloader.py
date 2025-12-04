@@ -63,7 +63,7 @@ class SunoDownloader:
     def configure(self, token, directory, max_pages, start_page, 
                   organize_by_month, embed_metadata_enabled, prefer_wav, download_delay, 
                   filter_settings=None, scan_only=False, target_songs=None, save_lyrics=True,
-                  organize_by_track=False, stems_only=False):
+                  organize_by_track=False, stems_only=False, smart_resume=False):
         self.config = {
             "token": token,
             "directory": directory,
@@ -78,7 +78,8 @@ class SunoDownloader:
             "scan_only": scan_only,
             "target_songs": target_songs or [], # List of dicts or UUIDs
             "organize_by_track": organize_by_track,
-            "stems_only": stems_only
+            "stems_only": stems_only,
+            "smart_resume": smart_resume
         }
         self.rate_limiter = RateLimiter(self.config["download_delay"])
 
@@ -90,22 +91,37 @@ class SunoDownloader:
 
     def _log(self, message, msg_type="info", thumbnail_data=None):
         """Internal helper to emit log signals."""
+        # Also print for debug window capture
+        print(f"[{msg_type.upper()}] {message}")
         self.signals.log_message.emit(message, msg_type, thumbnail_data)
         if thumbnail_data:
             self.signals.thumbnail_fetched.emit(thumbnail_data, message)
 
     def run(self):
-        print("DEBUG: SunoDownloader.run started")
         self.stop_event.clear()
+        print(f"DEBUG: Starting download/preload run()")
+        print(f"DEBUG: Config keys: {list(self.config.keys())}")
+        
         token = self.config.get("token", "").strip()
+        print(f"DEBUG: Token present: {bool(token)}, length: {len(token) if token else 0}")
+        
+        # Sanitize token: Remove any non-ASCII characters (e.g. ellipsis from copy-paste)
+        if token:
+            token = re.sub(r'[^\x00-\x7F]+', '', token)
+            
         if not token:
-            self._log("Token missing; download halted.", "error")
+            error_msg = "Token missing; download halted."
+            self._log(error_msg, "error")
+            print(f"ERROR: {error_msg}")
             self.signals.download_complete.emit(False)
             return
 
         directory = self.config.get("directory")
+        print(f"DEBUG: Download directory: {directory}")
         if not directory:
-            self._log("Download directory not set.", "error")
+            error_msg = "Download directory not set."
+            self._log(error_msg, "error")
+            print(f"ERROR: {error_msg}")
             self.signals.download_complete.emit(False)
             return
 
@@ -154,8 +170,11 @@ class SunoDownloader:
                         break
                     try:
                         future.result()
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        import traceback
+                        error_msg = f"Download error: {str(e)}\n{traceback.format_exc()}"
+                        self._log(error_msg, "error")
+                        print(error_msg)  # Also print for debug log
             
             if self.is_stopped():
                 self.signals.status_changed.emit("Stopped")
@@ -185,9 +204,14 @@ class SunoDownloader:
                 # Assuming default project ID is "default"
                 base_url = "https://studio-api.prod.suno.com/api/project/default"
             else:
-                base_url = f"https://studio-api.prod.suno.com/api/project/{workspace_id}"
+                # Check if it is a playlist or project
+                if filters.get("type") == "playlist":
+                     # Playlists might not support pagination, so we'll try without page parameter first
+                     base_url = f"https://studio-api.prod.suno.com/api/playlist/{workspace_id}/"
+                else:
+                     base_url = f"https://studio-api.prod.suno.com/api/project/{workspace_id}"
             
-            self._log(f"Fetching from Project: {filters.get('workspace_name', workspace_id)}", "info")
+            self._log(f"Fetching from {filters.get('type', 'Project')}: {filters.get('workspace_name', workspace_id)}", "info")
         elif is_public:
             # Public Feed (v2)
             base_url = "https://studio-api.prod.suno.com/api/feed/v2"
@@ -203,11 +227,15 @@ class SunoDownloader:
             separator = "&" if "?" in base_url else "?"
             base_url += separator + "&".join(params)
         
-        # Ensure URL ends with page= for the loop
-        separator = "&" if "?" in base_url else "?"
-        base_url += f"{separator}page="
+        # Check if this is a playlist (playlists might not support pagination)
+        is_playlist = filters and filters.get("type") == "playlist"
+        
+        # Ensure URL ends with page= for the loop (unless it's a playlist)
+        if not is_playlist:
+            separator = "&" if "?" in base_url else "?"
+            base_url += f"{separator}page="
 
-        self._log(f"API URL: {base_url}...", "info") # Log truncated URL for debug
+        self._log(f"API URL: {base_url}...", "info")
 
         max_pages = self.config.get("max_pages", 0)
         page_num = self.config.get("start_page", 1)
@@ -223,6 +251,28 @@ class SunoDownloader:
             uuid_cache = build_uuid_cache(directory)
             self._log(f"Found {len(uuid_cache)} existing songs in cache.", "info")
             
+            consecutive_skipped_pages = 0
+            # Adaptive threshold: scale with library size
+            # For small libraries (< 100 songs): 2 pages
+            # For medium libraries (100-1000 songs): 5 pages  
+            # For large libraries (1000-5000 songs): 10 pages
+            # For very large libraries (> 5000 songs): 20 pages
+            library_size = len(uuid_cache)
+            if library_size < 100:
+                smart_resume_threshold = 2
+            elif library_size < 1000:
+                smart_resume_threshold = 5
+            elif library_size < 5000:
+                smart_resume_threshold = 10
+            else:
+                smart_resume_threshold = 20
+            
+            # Track if we've found ANY new songs yet (to avoid stopping on initial already-downloaded pages)
+            found_new_songs = False
+            
+            if self.config.get("smart_resume"):
+                self._log(f"Smart Resume: Will stop after {smart_resume_threshold} consecutive pages with no new songs (library size: {library_size} songs).", "info")
+            
             with ThreadPoolExecutor(max_workers=3) as executor:
                 while not self.is_stopped():
                     if max_pages > 0 and page_num > max_pages:
@@ -230,51 +280,139 @@ class SunoDownloader:
                         break
 
                     self._log(f"Page {page_num}...", "info")
-                    try:
-                        url = f"{base_url}{page_num}"
-                        r = requests.get(url, headers=headers, timeout=15)
-                        if r.status_code == 401:
-                            self._log("Error: Token expired.", "error")
-                            self.signals.error_occurred.emit("Token expired. Please get a new token.")
-                            success = False
-                            break
-                        r.raise_for_status()
-                        data = r.json()
-                        
-                        # DEBUG: Inspect raw API response for prompt
+                    # Retry logic for fetching page
+                    max_retries = 3
+                    for attempt in range(max_retries):
                         try:
-                            if isinstance(data, dict):
-                                clips = data.get("clips") or data.get("project_clips")
-                                if clips and len(clips) > 0:
-                                    first_clip = clips[0]
-                                    if "clip" in first_clip: first_clip = first_clip["clip"]
-                                    meta = first_clip.get("metadata", {})
-                                    print(f"DEBUG: Raw API Metadata Keys (First Item): {list(meta.keys())}")
-                                    print(f"DEBUG: Raw API Prompt (First Item): {bool(meta.get('prompt'))}")
-                        except Exception as e:
-                            print(f"DEBUG: Failed to inspect raw API: {e}")
-                    except Exception as exc:
-                        self._log(f"Request failed: {exc}", "error")
-                        self.signals.error_occurred.emit(f"Network error on page {page_num}: {exc}")
-                        success = False
-                        break
+                            # For playlists, don't append page number
+                            if is_playlist:
+                                url = base_url
+                            else:
+                                url = f"{base_url}{page_num}"
+                            # Increased timeout to 30s and added retry loop
+                            r = requests.get(url, headers=headers, timeout=30)
+                            
+                            # 404 Fallback Logic: Project -> Playlist
+                            if r.status_code == 404:
+                                if "/api/project/" in base_url:
+                                    self._log("Project endpoint 404. Switching to Playlist endpoint...", "warning")
+                                    # Regex replace /api/project/ID -> /api/playlist/ID/
+                                    base_url = re.sub(r"/api/project/([^?&]+)", r"/api/playlist/\1/", base_url)
+                                    continue # Retry immediately with new URL
+                                else:
+                                    self._log("Error: Resource not found (404).", "error")
+                                    success = False
+                                    break
+
+                            if r.status_code == 401:
+                                self._log("Error: Token expired.", "error")
+                                self.signals.error_occurred.emit("Token expired. Please get a new token.")
+                                success = False
+                                break # Break retry loop, outer loop will also break due to success=False
+                            r.raise_for_status()
+                            data = r.json()
+                            
+                            # Debug: Log response structure for playlists
+                            if is_playlist:
+                                print(f"\n=== PLAYLIST API DEBUG ===")
+                                print(f"URL: {url}")
+                                print(f"Response Status: {r.status_code}")
+                                print(f"Response Type: {type(data)}")
+                                if isinstance(data, dict):
+                                    print(f"Response Keys: {list(data.keys())}")
+                                    # Check for various possible keys
+                                    for key in ["playlist_clips", "clips", "items", "songs", "tracks", "playlist"]:
+                                        if key in data:
+                                            items = data[key]
+                                            if isinstance(items, list):
+                                                print(f"Found '{key}' with {len(items)} items")
+                                                if len(items) > 0:
+                                                    print(f"First item keys: {list(items[0].keys()) if isinstance(items[0], dict) else 'Not a dict'}")
+                                            elif isinstance(items, dict):
+                                                print(f"Found '{key}' as dict with keys: {list(items.keys())}")
+                                elif isinstance(data, list):
+                                    print(f"Response is a list with {len(data)} items")
+                                    if len(data) > 0:
+                                        print(f"First item type: {type(data[0])}")
+                                        if isinstance(data[0], dict):
+                                            print(f"First item keys: {list(data[0].keys())}")
+                                print(f"Full Response (first 1000 chars): {str(data)[:1000]}")
+                                print(f"=== END PLAYLIST DEBUG ===\n")
+                                
+                                self._log(f"Playlist API Response Keys: {list(data.keys()) if isinstance(data, dict) else 'Not a dict'}", "info")
+                            
+                            # If successful, break the retry loop
+                            break 
+                        except Exception as exc:
+                            if attempt < max_retries - 1:
+                                self._log(f"Connection error on page {page_num} (Attempt {attempt+1}/{max_retries}): {exc}. Retrying...", "warning")
+                                time.sleep(2)
+                                continue
+                            else:
+                                self._log(f"Request failed after {max_retries} attempts: {exc}", "error")
+                                self.signals.error_occurred.emit(f"Network error on page {page_num}: {exc}")
+                                success = False
+                                break # Break retry loop
+                    
+                    if not success:
+                        break # Break page loop
 
                     # Handle different API response structures and robustly unwrap clips
                     # 1. Project/Workspace: {"project_clips": [{"clip": {...}}, ...]}
                     # 2. Main Library: [{"id": ...}, ...] or {"clips": [...]}
                     
-                    # --- ULTIMATE WORKSPACE PARSING & DEBUGGING LOGIC ---
+                    # --- WORKSPACE PARSING LOGIC ---
                     
                     # 1. Identify the list source
                     raw_data = data
-                    if isinstance(raw_data, dict) and "project_clips" in raw_data:
-                        raw_items = raw_data["project_clips"]
+                    raw_items = []
+                    
+                    if isinstance(raw_data, dict):
+                        # Try various possible keys for playlist/workspace data
+                        if "project_clips" in raw_data:
+                            raw_items = raw_data["project_clips"]
+                        elif "playlist_clips" in raw_data:
+                            raw_items = raw_data["playlist_clips"]
+                        elif "clips" in raw_data:
+                            raw_items = raw_data["clips"]
+                        elif "items" in raw_data:
+                            raw_items = raw_data["items"]
+                        elif "songs" in raw_data:
+                            raw_items = raw_data["songs"]
+                        elif "tracks" in raw_data:
+                            raw_items = raw_data["tracks"]
+                        elif "playlist" in raw_data and isinstance(raw_data["playlist"], dict):
+                            # Nested playlist structure
+                            playlist_data = raw_data["playlist"]
+                            if "playlist_clips" in playlist_data:
+                                raw_items = playlist_data["playlist_clips"]
+                            elif "clips" in playlist_data:
+                                raw_items = playlist_data["clips"]
+                            elif "items" in playlist_data:
+                                raw_items = playlist_data["items"]
                     elif isinstance(raw_data, list):
+                        # Direct list of items
                         raw_items = raw_data
-                    elif isinstance(raw_data, dict) and "clips" in raw_data:
-                        raw_items = raw_data["clips"]
-                    else:
-                        raw_items = []
+                    
+                    if is_playlist:
+                        print(f"Parsed {len(raw_items)} items from playlist response")
+                        self._log(f"Parsed {len(raw_items)} items from playlist response", "info")
+                        if len(raw_items) == 0:
+                            print(f"\n!!! WARNING: No items found in playlist response !!!")
+                            print(f"Response type: {type(data)}")
+                            if isinstance(data, dict):
+                                print(f"Response keys: {list(data.keys())}")
+                                # Print full response structure
+                                import json as json_module
+                                try:
+                                    response_str = json_module.dumps(data, indent=2)
+                                    print(f"Full Response:\n{response_str}")
+                                except Exception as e:
+                                    print(f"Could not serialize response: {e}")
+                                    print(f"Response repr: {repr(data)[:1000]}")
+                            print(f"!!! END WARNING !!!\n")
+                            
+                            self._log(f"WARNING: No items found in playlist response. Response type: {type(data)}, Keys: {list(data.keys()) if isinstance(data, dict) else 'Not a dict'}", "warning")
 
                     filtered_clips = []
 
@@ -291,9 +429,6 @@ class SunoDownloader:
                     # Override: If Stems Only is active, disable Hide Stems
                     if self.config.get("stems_only"):
                         filter_hide_stems = False
-
-                    print(f"--- STARTING FILTER DEBUG ---")
-                    print(f"Filters Active: Liked={filter_liked_only}, NoStems={filter_hide_stems}, NoTrash={filter_exclude_trash}")
 
                     for index, item in enumerate(raw_items):
                         # A. UNWRAP STRATEGY
@@ -333,9 +468,6 @@ class SunoDownloader:
                         
                         # Audio URL
                         audio_url = song_data.get("audio_url")
-
-                        # C. DEBUG PRINT
-                        # print(f"Song: {title[:15]}... | Liked: {is_liked} | Stem: {is_stem} | Trash: {is_trashed}")
 
                         # D. APPLY FILTERS
                         
@@ -384,22 +516,43 @@ class SunoDownloader:
                             if search_text not in searchable_content:
                                 continue
 
+                        # Extract UUID
+                        uuid = song_data.get("id")
+
                         # 9. Duplicate Check (Metadata-Based)
-                        current_uuid = song_data.get("id")
-                        if current_uuid and current_uuid in uuid_cache:
+                        if uuid and uuid in uuid_cache:
                             self._log(f"Skipping {title} (UUID found in cache)", "info")
                             continue
 
                         # E. SUCCESS
                         filtered_clips.append(song_data)
 
-                    print(f"--- FILTERING DONE. Found {len(filtered_clips)} songs. ---")
 
                     if not filtered_clips:
-                        self._log(f"Page {page_num}: All songs filtered out.", "info")
+                        self._log(f"Page {page_num}: All songs filtered out or skipped.", "info")
+                    
+                    # Track if we found new songs on this page
+                    if filtered_clips:
+                        found_new_songs = True
+                        consecutive_skipped_pages = 0  # Reset counter when we find new songs
+                    else:
+                        # Only count skipped pages if we've already found some new songs
+                        # This prevents stopping on initial pages of already-downloaded content
+                        if found_new_songs:
+                            consecutive_skipped_pages += 1
+                        # If we haven't found any new songs yet, don't count skipped pages
+                        # This allows scanning through already-downloaded pages at the start
+                         
+                    # Smart Resume: Only stop if we've found new songs before, then hit threshold
+                    # This ensures we scan past initial already-downloaded pages
+                    if self.config.get("smart_resume") and found_new_songs and consecutive_skipped_pages >= smart_resume_threshold:
+                        self._log(f"Smart Resume: Found new songs earlier, but no new songs in last {smart_resume_threshold} consecutive pages. Stopping scan.", "success")
+                        success = True
+                        break
                     
                     if scan_only:
                         for clip in filtered_clips:
+                            if self.is_stopped(): break
                             self.signals.song_found.emit(clip)
                     else:
                         futures = []
@@ -426,6 +579,14 @@ class SunoDownloader:
                             except Exception:
                                 pass
 
+                    # For playlists, only fetch once (no pagination)
+                    if is_playlist:
+                        break
+                    
+                    # Check if stopped before continuing to next page
+                    if self.is_stopped():
+                        break
+                    
                     page_num += 1
                     time.sleep(1)
         except Exception as exc:
@@ -466,6 +627,25 @@ class SunoDownloader:
             
         return []
 
+    def fetch_playlists(self, token):
+        """Fetch list of playlists."""
+        headers = {"Authorization": f"Bearer {token}"}
+        # Endpoint: /api/playlist/me?page=1&show_trashed=false&show_sharelist=false
+        url = f"{GEN_API_BASE}/api/playlist/me?page=1&show_trashed=false&show_sharelist=false"
+        
+        try:
+            r = requests.get(url, headers=headers, timeout=10)
+            if r.status_code == 200:
+                data = r.json()
+                # Structure: {"playlists": [...]}
+                return data.get("playlists", [])
+            else:
+                self._log(f"Failed to fetch playlists: {r.status_code} {r.text}", "error")
+        except Exception as e:
+            self._log(f"Error fetching playlists: {e}", "error")
+            
+        return []
+
     def download_single_song(self, clip, directory, headers, token, existing_uuids, rate_limiter):
         if self.is_stopped():
             return
@@ -486,7 +666,6 @@ class SunoDownloader:
         if not prompt:
             clip_id = clip.get("id")
             if clip_id:
-                print(f"DEBUG: Prompt missing for {clip_id}. Refetching full details...")
                 try:
                     detail_url = f"https://studio-api.prod.suno.com/api/clip/{clip_id}"
                     # Use the same headers (auth) as the main request
@@ -495,13 +674,10 @@ class SunoDownloader:
                         full_details = r_refetch.json()
                         metadata = full_details.get("metadata", {})
                         prompt = metadata.get("prompt", "")
-                        print(f"DEBUG: Refetch successful. Prompt found: {bool(prompt)} (Len: {len(prompt)})")
                         # Update clip metadata so subsequent logic uses it
                         clip["metadata"] = metadata
                 except Exception as e:
-                    print(f"DEBUG: Refetch failed: {e}")
-        else:
-             print(f"DEBUG: Prompt found in initial data: {bool(prompt)} (Len: {len(prompt)})")
+                    self._log(f"Failed to refetch prompt for {clip_id}: {e}", "warning")
         # ------------------------
         tags = metadata.get("tags", "")
         created_at = clip.get("created_at", "")
@@ -589,7 +765,10 @@ class SunoDownloader:
                 txt_path = os.path.splitext(out_path)[0] + ".txt"
                 with open(txt_path, "w", encoding="utf-8") as f:
                     f.write(lyrics)
+            
+            # Always embed metadata if enabled, or at least embed lyrics
             if self.config.get("embed_metadata"):
+                # Full metadata embedding
                 embed_metadata(
                     audio_path=out_path,
                     image_url=image_url,
@@ -602,6 +781,17 @@ class SunoDownloader:
                     uuid=uuid,
                     token=token,
                 )
+            elif lyrics:
+                # Only embed lyrics even if full metadata is disabled
+                embed_metadata(
+                    audio_path=out_path,
+                    lyrics=lyrics,
+                    metadata_options={
+                        'title': False, 'artist': False, 'genre': False, 'year': False,
+                        'comment': False, 'lyrics': True, 'album_art': False, 'uuid': False
+                    }
+                )
+            
             existing_uuids.add(uuid)
             self._log(f"✓ {title}", "success", thumbnail_data=thumb_data)
             self.signals.song_finished.emit(uuid, True, out_path)

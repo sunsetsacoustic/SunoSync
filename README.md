@@ -6,15 +6,12 @@ SunoSync V2 is the ultimate desktop manager for your Suno AI music generation. I
 
 ![SunoSync Splash](resources/splash.png)
 
+**Buy the exe or compile yourself below for free:**
 
-Buy the exe:
+- https://ko-fi.com/s/374c24251c - PayPal accepted here
+- https://justinmurray99.gumroad.com/l/rrxty
 
-https://ko-fi.com/s/374c24251c -  PayPal accepted here 
-
-https://justinmurray99.gumroad.com/l/rrxty
-
-Discord Support and Community : https://discord.gg/kZSc8sKUZR
-
+**Discord Support and Community:** https://discord.gg/kZSc8sKUZR
 
 ## 🌟 Key Features
 
@@ -23,36 +20,43 @@ Discord Support and Community : https://discord.gg/kZSc8sKUZR
 *   **Smart Sync:** Only downloads new songs, skipping what you already have.
 *   **Format Choice:** Choose between **MP3** (smaller size) or **WAV** (lossless quality).
 *   **Organization:** Automatically organizes downloads into folders by **Year-Month** (e.g., `2025-11`).
-*   **Metadata Embedding:** Automatically embeds Title, Artist, and **Lyrics** directly into the audio file tags.
+*   **Metadata Embedding:** Automatically embeds Title, Artist, and **Lyrics** directly into the audio file tags (MP3 and WAV).
 *   **Lyrics Files:** Option to save lyrics as separate `.txt` files.
+*   **Smart Resume:** Intelligently stops scanning after consecutive pages with no new songs.
+*   **Workspace & Playlist Support:** Browse and download from your Suno workspaces and playlists.
+*   **Advanced Filtering:** Filter by liked, trashed, stems, public/private, and more.
+*   **Preload Mode:** Preview songs before downloading and uncheck unwanted tracks.
 
 ### 📚 Music Library
 *   **Visual Browser:** Browse your entire collection in a clean, sortable list.
 *   **Search:** Instantly filter songs by Title or Artist.
 *   **Sorting:** Sort by Date, Duration, Size, Title, or Artist.
-*   **Context Menu:** Right-click to Play, Open Folder, or Delete songs.
+*   **Tag System:** Organize songs with Like 👍, Star ⭐, and Trash 🗑️ tags with filtering support.
+*   **Context Menu:** Right-click to Play, View/Edit Lyrics, Open Folder, or Delete songs.
 *   **Auto-Refresh:** Library automatically updates when new downloads finish.
 
 ### 🎵 Built-in Player
 *   **Seamless Playback:** Play songs directly within the app without opening external players.
 *   **Controls:** Play/Pause, Stop, Seek Bar, and Volume Control.
-*   **Now Playing:** Displays current song title and artist.
-*   **Format Support:** Plays both MP3 and WAV files.
+*   **Playback Modes:** Shuffle, Repeat All, and Repeat One modes.
+*   **Tag Controls:** Quick-access Like, Star, and Trash buttons with automatic library synchronization.
 
-### ✍️ Lyrics Editor (New in v2.0!)
+### ✍️ Lyrics Editor
 *   **View & Edit:** Right-click any song to view the embedded lyrics.
+*   **Multiple Sources:** Reads lyrics from both embedded metadata and `.txt` files.
 *   **Edit Mode:** Fix typos or add your own verses directly in the app.
+*   **Dual Save:** Saves lyrics to both `.txt` file and audio file metadata.
 *   **Verification:** Automatically verifies that your changes are saved to the file on disk.
 
 ### 🎨 Modern UI & Polish
 *   **Dark Mode:** Sleek, modern dark interface that's easy on the eyes.
-*   **Splash Screen:** Professional launch experience.
+*   **Customizable Notifications:** Option to disable Windows alert notification sounds.
 *   **Window State:** Remembers your window size and position between sessions.
-*   **Changelog:** Stay updated with a "What's New" popup on major updates.
+*   **Debug Tools:** Built-in debug log viewer for troubleshooting.
 
 ## 🚀 Getting Started
 
-1.  **Download:** Get the latest `SunoSyncV2.exe`.
+1.  **Download:** Get the latest `SunoSyncV2.exe` or compile from source (see below).
 2.  **Install VLC:** Ensure you have [VLC Media Player](https://www.videolan.org/) installed (required for audio playback).
 3.  **Run:** Double-click `SunoSyncV2.exe`.
 4.  **Get Token:**
@@ -60,22 +64,17 @@ Discord Support and Community : https://discord.gg/kZSc8sKUZR
     *   Log in to Suno.com.
     *   Open Developer Tools (F12) -> Application -> Cookies.
     *   Copy the value of the `__client` cookie.
-5.  **Download:** Paste your token and click **Start Download**.
+5.  **Download:** Paste your token and click **Start Download** or **Preload** to preview first.
 
-   
- �️ Security & VirusTotal Transparency
-
-
+## 🔒 Security & VirusTotal Transparency
 
 We believe in 100% transparency. Because SunoSync is an indie tool built with Python (and not a digitally signed corporation app), a few generic antivirus filters may flag it as "unknown."
 
-The Reality: ✅ 69/72 Security Vendors found NO issues (Clean) ⚠️ 3/72 flagged as "False Positive" (Generic/Heuristic)
+**The Reality:** ✅ 69/72 Security Vendors found NO issues (Clean) ⚠️ 3/72 flagged as "False Positive" (Generic/Heuristic)
 
 These flags occur because the app is "unsigned" (common for indie devs). You can verify the file yourself below:
 
-[➢ Click here to view the live VirusTotal Report](https://www.virustotal.com/gui/file/18e4519da68b821d2fe043c9349d44d85cde94db34f9e8d4f9a5ff4fadf0a3e2?nocache=1)
-
-
+[➢ Click here to view the live VirusTotal Report](https://www.virustotal.com/gui/file/008405d9f373cae2de87f8208094ecaff4532123440e6c857a05e0a8831d25d5/summary)
 
 ## ☕ Support
 
@@ -121,9 +120,9 @@ To build the standalone `.exe` file:
     pip install pyinstaller
     ```
 
-2.  **Build:**
+2.  **Build using the spec file:**
     ```bash
-    pyinstaller --name="SunoSyncV2" --onefile --windowed --icon="resources/icon.ico" --add-data "resources;resources" main.py
+    pyinstaller SunoApi.spec
     ```
 
 3.  The executable will be in the `dist/` folder.

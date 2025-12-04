@@ -374,7 +374,6 @@ class CustomCheckbox(tk.Canvas):
 
 class SongCard(tk.Frame):
     def __init__(self, parent, uuid, title, thumbnail_data=None, metadata=None, bg_color="#1a1a1a", **kwargs):
-        print(f"DEBUG: SongCard init for {uuid}")
         super().__init__(parent, bg=bg_color, **kwargs)
         self.uuid = uuid
         self.title = title
@@ -532,9 +531,7 @@ class DownloadQueuePane(tk.Frame):
         self.canvas.itemconfig(self.canvas.find_withtag("all")[0], width=event.width)
 
     def add_song(self, uuid, title, thumbnail_data=None, metadata=None):
-        print(f"DEBUG: DownloadQueuePane.add_song called for {uuid}")
         if uuid in self.cards:
-            print(f"DEBUG: Song {uuid} already in cards")
             return
             
         try:
@@ -545,9 +542,7 @@ class DownloadQueuePane(tk.Frame):
             self.cards[uuid] = card
             self._update_empty_state()
             self.canvas.yview_moveto(1.0) # Auto-scroll to bottom
-            print(f"DEBUG: SongCard added successfully for {uuid}")
         except Exception as e:
-            print(f"DEBUG: Error creating SongCard: {e}")
             import traceback
             traceback.print_exc()
 
@@ -577,7 +572,7 @@ class FilterPopup(tk.Toplevel):
     def __init__(self, parent, current_filters, on_apply, active_workspace_name=None, bg_color="#1a1a1a", fg_color="#ffffff", accent_color="#8b5cf6"):
         super().__init__(parent)
         self.title("Filters")
-        self.geometry("300x550")
+        self.geometry("300x600")
         self.configure(bg=bg_color)
         self.transient(parent)
         self.grab_set()
@@ -594,9 +589,38 @@ class FilterPopup(tk.Toplevel):
         header.pack(fill="x", padx=16, pady=16)
         tk.Label(header, text="Filters", font=("Segoe UI", 14, "bold"), bg=bg_color, fg=fg_color).pack(side="left")
         
-        # Content
-        content = tk.Frame(self, bg=bg_color)
-        content.pack(fill="both", expand=True, padx=16)
+        # Footer (pack first so it stays at bottom)
+        footer = tk.Frame(self, bg=bg_color)
+        footer.pack(fill="x", padx=16, pady=16, side="bottom")
+        
+        apply_btn = RoundedButton(footer, "Save Filters", self._apply,
+                                 bg_color=accent_color, fg_color="white",
+                                 hover_color=lighten_color(accent_color, 0.1),
+                                 width=268, height=40, corner_radius=8)
+        apply_btn.pack()
+        
+        # Content (scrollable area)
+        canvas = tk.Canvas(self, bg=bg_color, highlightthickness=0)
+        scrollbar = tk.Scrollbar(self, orient="vertical", command=canvas.yview)
+        scrollable_content = tk.Frame(canvas, bg=bg_color)
+        
+        scrollable_content.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+        
+        canvas.create_window((0, 0), window=scrollable_content, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        
+        canvas.pack(side="left", fill="both", expand=True, padx=(16, 0), pady=(0, 16))
+        scrollbar.pack(side="right", fill="y", padx=(0, 16), pady=(0, 16))
+        
+        # Bind mousewheel to canvas
+        def _on_mousewheel(event):
+            canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+        canvas.bind_all("<MouseWheel>", _on_mousewheel)
+        
+        content = scrollable_content
         
         self.vars = {}
         
@@ -683,9 +707,9 @@ class FilterPopup(tk.Toplevel):
 
 
 class WorkspaceBrowser(tk.Toplevel):
-    def __init__(self, parent, workspaces, on_select, bg_color="#1a1a1a", fg_color="#ffffff", accent_color="#8b5cf6"):
+    def __init__(self, parent, workspaces, on_select, bg_color="#1a1a1a", fg_color="#ffffff", accent_color="#8b5cf6", title="Select Workspace"):
         super().__init__(parent)
-        self.title("Select Workspace")
+        self.title(title)
         self.geometry("400x500")
         self.configure(bg=bg_color)
         self.transient(parent)
@@ -698,7 +722,7 @@ class WorkspaceBrowser(tk.Toplevel):
         # Header
         header = tk.Frame(self, bg=bg_color)
         header.pack(fill="x", padx=16, pady=16)
-        tk.Label(header, text="Workspaces", font=("Segoe UI", 14, "bold"), bg=bg_color, fg=fg_color).pack(side="left")
+        tk.Label(header, text=title, font=("Segoe UI", 14, "bold"), bg=bg_color, fg=fg_color).pack(side="left")
         
         # Scrollable List
         canvas = tk.Canvas(self, bg=bg_color, highlightthickness=0)

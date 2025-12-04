@@ -126,17 +126,29 @@ def read_song_metadata(filepath):
                 if 'TPE1' in audio.tags:
                     result['artist'] = str(audio.tags['TPE1'].text[0])
                 
-                # Lyrics (USLT)
+                # Lyrics (USLT) - check all USLT frames and use the first non-empty one
                 for key in audio.tags.keys():
                     if key.startswith('USLT'):
-                        result['lyrics'] = str(audio.tags[key].text)
-                        break
+                        lyrics_text = str(audio.tags[key].text)
+                        if lyrics_text and lyrics_text.strip():
+                            result['lyrics'] = lyrics_text
+                            break
                 
                 # Fallback to filename if no title tag
                 if result['title'] == os.path.basename(filepath) and 'TIT2' not in audio.tags:
                     # Try to parse filename (remove extension and clean up)
                     name = os.path.splitext(os.path.basename(filepath))[0]
                     result['title'] = name.replace('_', ' ')
+        
+        # If no lyrics in metadata, check for .txt file
+        if not result['lyrics'] or result['lyrics'].strip() == '':
+            txt_path = os.path.splitext(filepath)[0] + ".txt"
+            if os.path.exists(txt_path):
+                try:
+                    with open(txt_path, 'r', encoding='utf-8') as f:
+                        result['lyrics'] = f.read()
+                except Exception:
+                    pass  # Silently fail if .txt file can't be read
         
         # Get UUID
         result['id'] = get_uuid_from_file(filepath)
@@ -342,59 +354,28 @@ def embed_metadata(
         # Note: 'lyrics' variable already contains the extracted text from suno_downloader.py
         lyrics_text = lyrics
         
-        # DEBUG: Print to console to prove we actually found text
-        if lyrics_text:
-            print(f"Lyrics found ({len(lyrics_text)} chars). Attempting embed...")
-        else:
-            print("No lyrics found in metadata.")
 
         if lyrics_text and metadata_options.get('lyrics', True):
             try:
-                file_path_lower = audio_path.lower()
-
-                # --- OPTION A: MP3 FILES ---
-                if file_path_lower.endswith(".mp3"):
-                    try:
-                        # We need to open it as ID3 to add frames directly
-                        # The existing 'audio' object for MP3 is MP3(path, ID3=ID3)
-                        # So audio.tags IS the ID3 object.
-                        # But the user wants to be strict.
-                        # I'll use the existing 'audio' object if it's MP3, as it's already correct.
-                        # audio.tags.add(USLT(...))
-                        # But wait, the user's code re-opens it.
-                        # "audio = ID3(file_path)"
-                        # If I do that, I need to save it separately.
-                        # But 'audio' (the main one) is saved at the end of the function.
-                        # If I modify the file separately, 'audio.save()' might overwrite it?
-                        # Or 'audio.save()' might fail if file changed?
-                        # Actually, 'audio' is mutagen.mp3.MP3 or mutagen.wave.WAVE.
-                        # I should use the 'audio' object I already have!
-                        # The user's code is standalone. I need to integrate it.
-                        
-                        # For MP3:
-                        if isinstance(audio, MP3):
-                             audio.tags.add(USLT(encoding=3, lang='eng', desc='Lyrics', text=lyrics_text))
-                        
-                        # For WAV:
-                        elif isinstance(audio, WAVE):
-                            # WAVs need a specific ID3 chunk added first
-                            if audio.tags is None:
-                                audio.add_tags()
-                            
-                            # Now we can add the ID3 frame to the WAV
-                            audio.tags.add(USLT(encoding=3, lang='eng', desc='Lyrics', text=lyrics_text))
-                            
-                        print(f"Lyrics successfully embedded for {os.path.basename(audio_path)}")
-
-                    except Exception as e:
-                        print(f"Critical Tagging Error: {e}")
+                # Remove existing USLT frames first
+                to_delete = [key for key in audio.tags.keys() if key.startswith('USLT')]
+                for key in to_delete:
+                    del audio.tags[key]
                 
-                # The user's code had a separate block for WAV.
-                # My integration above handles both using the 'audio' object.
-                # This is cleaner and safer than re-opening the file.
+                # Add lyrics to both MP3 and WAV files
+                # For WAV files, ensure tags exist
+                if isinstance(audio, WAVE):
+                    if audio.tags is None:
+                        audio.add_tags()
+                
+                # Add USLT frame with lyrics
+                audio.tags.add(USLT(encoding=3, lang='eng', desc='', text=lyrics_text))
+                print(f"Lyrics successfully embedded for {os.path.basename(audio_path)}")
                 
             except Exception as e:
                 print(f"Failed to embed lyrics: {e}")
+                import traceback
+                traceback.print_exc()
 
         if metadata_options.get('uuid', True) and uuid:
             audio.tags.add(TXXX(encoding=3, desc="SUNO_UUID", text=uuid))
@@ -405,7 +386,11 @@ def embed_metadata(
                     del audio.tags[key]
             audio.tags.add(APIC(encoding=3, mime=mime, type=3, desc="Cover", data=image_bytes))
 
-        audio.save(v2_version=3)
+        # Save: MP3 uses v2_version, WAV doesn't support it
+        if is_wav:
+            audio.save()
+        else:
+            audio.save(v2_version=3)
     except Exception as e:
         print(f"Metadata error: {e}")
 
@@ -420,6 +405,57 @@ def truncate_path(path, max_length=40):
     if len(folder_name) > max_length - 10:
         return f"...{folder_name[-max_length+3:]}"
     return f"{parent[:15]}...{os.sep}{folder_name}"
+
+
+def safe_messagebox(func, *args, suppress_sound=False, **kwargs):
+    """
+    Wrapper for messagebox functions that can suppress Windows notification sounds.
+    
+    Args:
+        func: messagebox function (showinfo, showwarning, showerror, askyesno, etc.)
+        *args: Arguments to pass to the messagebox function
+        suppress_sound: If True, suppress Windows notification sound
+        **kwargs: Keyword arguments to pass to the messagebox function
+    
+    Returns:
+        The result of the messagebox function
+    """
+    if suppress_sound:
+        # Suppress Windows notification sound
+        try:
+            import tkinter as tk
+            root = tk._default_root
+            if root:
+                # Save current bell volume
+                original_volume = root.tk.call('set', 'bell_volume', root.tk.call('set', 'bell_volume'))
+                # Disable bell sound by setting volume to 0
+                try:
+                    root.tk.call('set', 'bell_volume', '0')
+                    result = func(*args, **kwargs)
+                finally:
+                    # Restore bell volume
+                    try:
+                        root.tk.call('set', 'bell_volume', original_volume)
+                    except:
+                        pass
+                return result
+        except:
+            # Fallback: try disabling bell completely
+            try:
+                import tkinter as tk
+                root = tk._default_root
+                if root:
+                    root.option_add('*bellOff', '1')
+                    try:
+                        result = func(*args, **kwargs)
+                    finally:
+                        root.option_clear('*bellOff')
+                    return result
+            except:
+                pass
+    
+    # If suppress_sound is False or error occurred, use normal messagebox
+    return func(*args, **kwargs)
 
 
 def create_tooltip(widget, text):

@@ -7,6 +7,65 @@ from tkinter import filedialog, messagebox
 from PIL import Image, ImageTk, ImageDraw
 
 from suno_utils import blend_colors, truncate_path, create_tooltip
+
+
+class StdoutCapture:
+    """Capture stdout and send to debug window."""
+    def __init__(self, downloader_tab):
+        self.downloader_tab = downloader_tab
+        # Use sys.stdout instead of sys.__stdout__ for better compatibility
+        try:
+            self.original_stdout = sys.stdout if sys.stdout else sys.__stdout__
+        except:
+            self.original_stdout = sys.__stdout__
+        self.buffer = ""
+    
+    def write(self, text):
+        """Write to both original stdout and debug window."""
+        try:
+            if self.original_stdout:
+                self.original_stdout.write(text)
+                self.original_stdout.flush()
+        except:
+            pass
+        
+        # Buffer text until newline
+        if not hasattr(self, 'buffer'):
+            self.buffer = ""
+        if text:
+            self.buffer += text
+            if '\n' in self.buffer:
+                lines = self.buffer.split('\n')
+                self.buffer = lines[-1]  # Keep incomplete line in buffer
+                for line in lines[:-1]:
+                    if line.strip():  # Only log non-empty lines
+                        # Use after() to update GUI from main thread (thread-safe)
+                        line_copy = line  # Capture in closure
+                        try:
+                            self.downloader_tab.after(0, lambda l=line_copy: self.downloader_tab.add_debug_log(l))
+                        except:
+                            # Fallback: try direct call if after() fails
+                            try:
+                                self.downloader_tab.add_debug_log(line_copy)
+                            except:
+                                pass
+    
+    def flush(self):
+        try:
+            if self.original_stdout:
+                self.original_stdout.flush()
+        except:
+            pass
+        # Flush any remaining buffer
+        if hasattr(self, 'buffer') and self.buffer.strip():
+            try:
+                self.downloader_tab.after(0, lambda: self.downloader_tab.add_debug_log(self.buffer))
+            except:
+                try:
+                    self.downloader_tab.add_debug_log(self.buffer)
+                except:
+                    pass
+            self.buffer = ""
 from suno_widgets import (
     RoundedButton,
     RoundedCardFrame,
@@ -56,6 +115,14 @@ class DownloaderTab(tk.Frame):
         self.preloaded_songs = {}  # uuid -> song_data
         self.is_preloaded = False
         self.filter_settings = {}
+        self.debug_window = None
+        self.debug_logs = []  # Store logs for debug window
+        self.debug_text = None
+        
+        # Redirect stdout to capture print statements
+        self.original_stdout = sys.stdout
+        self.stdout_capture = StdoutCapture(self)
+        sys.stdout = self.stdout_capture
         
         self.create_widgets()
         self.load_config_into_ui()
@@ -63,6 +130,14 @@ class DownloaderTab(tk.Frame):
         
         # Start GUI processor
         self._process_gui_queue()
+        
+        # Initialize debug log (but don't auto-open window)
+        self.add_debug_log("=== Debug Log Started ===")
+        self.add_debug_log("Click 'Debug Log' button to view logs")
+        
+        # Test debug log is working
+        print("DEBUG: Debug log capture test - if you see this in debug log, it's working!")
+        self.add_debug_log("Debug log initialized successfully")
         
         # Check for initial path setup
         self.after(500, self.check_initial_path)
@@ -175,15 +250,27 @@ class DownloaderTab(tk.Frame):
         # Initial Summary Update
         self.update_accordion_summaries()
         
+        # Debug button (use Label to avoid focus border)
+        debug_frame = tk.Frame(left_panel, bg=self.bg_card, relief="flat", bd=0)
+        debug_frame.pack(pady=5)
+        debug_btn = tk.Label(debug_frame, text="🐛 Debug Log", 
+                             bg=self.bg_card, fg=self.fg_primary, font=("Segoe UI", 9),
+                             cursor="hand2", padx=10, pady=5, relief="flat", bd=0)
+        debug_btn.pack()
+        debug_btn.bind("<Button-1>", lambda e: self.open_debug_window())
+        # Hover effect
+        debug_btn.bind("<Enter>", lambda e: debug_btn.config(bg="#333333"))
+        debug_btn.bind("<Leave>", lambda e: debug_btn.config(bg=self.bg_card))
+        
         # Progress Bar (Bottom of Left Panel)
-        progress_container = tk.Frame(left_panel, bg=self.bg_dark, height=6)
+        progress_container = tk.Frame(left_panel, bg=self.bg_dark, height=24)
         progress_container.pack(fill="x", pady=(15, 0))
         progress_container.pack_propagate(False)
         
-        self.progress = NeonProgressBar(progress_container, height=6,
+        self.progress = NeonProgressBar(progress_container, height=20,
                                         colors=(self.accent_purple, self.accent_pink),
                                         bg=self.bg_dark)
-        self.progress.pack(fill="both", expand=True)
+        self.progress.pack(fill="both", expand=True, padx=0, pady=2)
         right_panel = tk.Frame(self, bg=self.bg_dark, padx=20, pady=20)
         right_panel.grid(row=0, column=1, sticky="nsew")
         
@@ -296,8 +383,14 @@ class DownloaderTab(tk.Frame):
         if self.downloader:
             self.downloader.stop()
         self.update_status_safe("Stopping...")
-        self.start_btn.config_state("disabled")
-        self.stop_btn.config_state("disabled")
+        self.progress.stop()
+        self.progress.set_text("")
+        # Reset buttons after a short delay to allow stop to process
+        self.after(500, lambda: self.toggle_action_buttons(downloading=False))
+        self.after(500, lambda: self.update_status_safe("Stopped"))
+        # Reset preload state if stopped during preload
+        if self.is_preloaded:
+            self.after(500, lambda: self.start_btn.set_text("Start Download"))
 
     def toggle_action_buttons(self, downloading=False):
         """Toggle button states based on download status."""
@@ -333,6 +426,125 @@ class DownloaderTab(tk.Frame):
             # Optional: could show tooltip on hover too, but toast on click is more persistent
             pass
 
+    def open_debug_window(self):
+        """Open or focus the debug log window."""
+        if self.debug_window is None or not self.debug_window.winfo_exists():
+            self.debug_window = tk.Toplevel(self.winfo_toplevel())
+            self.debug_window.title("Debug Log")
+            self.debug_window.geometry("800x600")
+            self.debug_window.configure(bg=self.bg_dark)
+            
+            # Header
+            header = tk.Frame(self.debug_window, bg=self.bg_dark, pady=10)
+            header.pack(fill="x")
+            tk.Label(header, text="Debug Log", font=("Segoe UI", 14, "bold"),
+                    bg=self.bg_dark, fg=self.fg_primary).pack(side=tk.LEFT, padx=10)
+            
+            # Button frame
+            btn_frame = tk.Frame(header, bg=self.bg_dark)
+            btn_frame.pack(side=tk.RIGHT, padx=10)
+            
+            # Save Log button
+            save_btn = tk.Button(btn_frame, text="Save Log", command=self.save_debug_log,
+                                 bg=self.accent_purple, fg="white", font=("Segoe UI", 9, "bold"),
+                                 relief="flat", padx=10, pady=5, cursor="hand2")
+            save_btn.pack(side=tk.RIGHT, padx=(0, 10))
+            
+            # Clear button
+            clear_btn = tk.Button(btn_frame, text="Clear", command=self.clear_debug_log,
+                                 bg=self.bg_card, fg=self.fg_primary, font=("Segoe UI", 9),
+                                 relief="flat", padx=10, pady=5, cursor="hand2")
+            clear_btn.pack(side=tk.RIGHT)
+            
+            # Text widget with scrollbar
+            text_frame = tk.Frame(self.debug_window, bg=self.bg_dark)
+            text_frame.pack(fill="both", expand=True, padx=10, pady=10)
+            
+            scrollbar = tk.Scrollbar(text_frame)
+            scrollbar.pack(side=tk.RIGHT, fill="y")
+            
+            self.debug_text = tk.Text(text_frame, bg="#0a0a0a", fg="#00ff00",
+                                     font=("Consolas", 10), wrap="word",
+                                     yscrollcommand=scrollbar.set,
+                                     relief="flat", bd=0)
+            self.debug_text.pack(side=tk.LEFT, fill="both", expand=True)
+            scrollbar.config(command=self.debug_text.yview)
+            
+            # Load existing logs
+            for log in self.debug_logs:
+                self.debug_text.insert("end", log + "\n")
+            self.debug_text.see("end")
+            
+            # Make window close properly
+            self.debug_window.protocol("WM_DELETE_WINDOW", self._close_debug_window)
+        else:
+            self.debug_window.lift()
+            self.debug_window.focus()
+    
+    def _close_debug_window(self):
+        """Close debug window but keep it available."""
+        if self.debug_window:
+            self.debug_window.destroy()
+            self.debug_window = None
+    
+    def clear_debug_log(self):
+        """Clear the debug log."""
+        self.debug_logs.clear()
+        if hasattr(self, 'debug_text') and self.debug_text:
+            self.debug_text.delete("1.0", "end")
+    
+    def save_debug_log(self):
+        """Save debug log to a text file."""
+        if not self.debug_logs:
+            messagebox.showinfo("Info", "Debug log is empty.")
+            return
+        
+        try:
+            from tkinter import filedialog
+            import datetime
+            
+            # Suggest filename with timestamp
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            default_filename = f"SunoSync_DebugLog_{timestamp}.txt"
+            
+            filepath = filedialog.asksaveasfilename(
+                title="Save Debug Log",
+                defaultextension=".txt",
+                initialfile=default_filename,
+                filetypes=[("Text files", "*.txt"), ("All files", "*.*")]
+            )
+            
+            if filepath:
+                with open(filepath, 'w', encoding='utf-8') as f:
+                    f.write("SunoSync Debug Log\n")
+                    f.write("=" * 50 + "\n")
+                    f.write(f"Generated: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+                    f.write("=" * 50 + "\n\n")
+                    for log in self.debug_logs:
+                        f.write(log + "\n")
+                
+                messagebox.showinfo("Success", f"Debug log saved to:\n{filepath}")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to save debug log:\n{e}")
+    
+    def add_debug_log(self, message):
+        """Add a message to the debug log (must be called from main thread)."""
+        if not message:
+            return
+            
+        self.debug_logs.append(message)
+        # Keep only last 1000 lines
+        if len(self.debug_logs) > 1000:
+            self.debug_logs = self.debug_logs[-1000:]
+        
+        if hasattr(self, 'debug_text') and self.debug_text:
+            try:
+                if self.debug_text.winfo_exists():
+                    self.debug_text.insert("end", message + "\n")
+                    self.debug_text.see("end")
+            except:
+                pass
+    
     def _show_error_toast(self, event):
         """Show a temporary toast message with the error details."""
         toast = tk.Toplevel(self.winfo_toplevel())
@@ -364,6 +576,13 @@ class DownloaderTab(tk.Frame):
         self.max_pages_var.set(c.get("max_pages", 0))
         self.start_page_var.set(c.get("start_page", 0))
         self.track_folder_var.set(c.get("track_folder", False))
+        self.smart_resume_var.set(c.get("smart_resume", False))
+        
+        # Load disable sounds setting (apply after UI is created)
+        if hasattr(self, 'disable_sounds_var'):
+            self.disable_sounds_var.set(c.get("disable_sounds", False))
+            # Apply sound setting after a short delay to ensure root exists
+            self.after(100, self._apply_sound_setting)
         
         # Load filters
         self.filter_settings = c.get("filter_settings", {
@@ -382,7 +601,13 @@ class DownloaderTab(tk.Frame):
         self.download_wav_var.trace_add("write", self.update_accordion_summaries)
         self.embed_thumb_var.trace_add("write", self.update_accordion_summaries)
         self.organize_var.trace_add("write", self.update_accordion_summaries)
+        self.organize_var.trace_add("write", self.update_accordion_summaries)
         self.track_folder_var.trace_add("write", self.update_accordion_summaries)
+        self.smart_resume_var.trace_add("write", self.update_accordion_summaries)
+        
+        # Add trace for disable sounds to apply immediately
+        if hasattr(self, 'disable_sounds_var'):
+            self.disable_sounds_var.trace_add("write", lambda *args: (self._apply_sound_setting(), self.save_config()))
 
     def update_accordion_summaries(self, *args):
         """Update the summary chips on accordion headers."""
@@ -408,6 +633,9 @@ class DownloaderTab(tk.Frame):
             
         if self.track_folder_var.get():
             settings_summary.append("TrackFolder")
+
+        if self.smart_resume_var.get():
+            settings_summary.append("SmartResume")
             
         if self.filter_settings.get("stems_only"):
             settings_summary.append("StemsOnly")
@@ -426,11 +654,33 @@ class DownloaderTab(tk.Frame):
         c.set("max_pages", self.max_pages_var.get())
         c.set("start_page", self.start_page_var.get())
         c.set("track_folder", self.track_folder_var.get())
+        c.set("smart_resume", self.smart_resume_var.get())
         c.set("filter_settings", self.filter_settings)
+        
+        # Save disable sounds setting
+        if hasattr(self, 'disable_sounds_var'):
+            c.set("disable_sounds", self.disable_sounds_var.get())
+            self._apply_sound_setting()
+        
         c.save_config()
         
         # Update summaries when config is saved (covers most changes)
         self.update_accordion_summaries()
+    
+    def _apply_sound_setting(self):
+        """Apply sound suppression setting by disabling Windows notification bell."""
+        if hasattr(self, 'disable_sounds_var'):
+            disable = self.disable_sounds_var.get()
+            try:
+                root = self.winfo_toplevel()
+                if disable:
+                    # Disable bell sound globally
+                    root.option_add('*bellOff', '1')
+                else:
+                    # Re-enable bell sound
+                    root.option_clear('*bellOff')
+            except:
+                pass
 
     def open_filters(self):
         ws_name = self.filter_settings.get("workspace_name")
@@ -518,12 +768,12 @@ class DownloaderTab(tk.Frame):
                         if image_url:
                             threading.Thread(target=self._fetch_thumb_bg, args=(uuid, image_url), daemon=True).start()
                 except Exception as e:
-                    print(f"Error processing GUI message {msg_type}: {e}")
                     import traceback
                     traceback.print_exc()
                     
         except Exception as e:
-            print(f"Critical error in GUI queue processor: {e}")
+            import traceback
+            traceback.print_exc()
             
         self.after(100, self._process_gui_queue)
 
@@ -568,14 +818,71 @@ class DownloaderTab(tk.Frame):
         
         messagebox.showinfo("Workspace Selected", f"Selected workspace: {name}\nClick 'Start Download' or 'Preload' to proceed.")
 
-    def preload_songs(self):
+    def open_playlists(self):
         token = self.token_var.get().strip()
         if not token:
-            messagebox.showerror("Error", "Please enter a Bearer Token.")
+            messagebox.showerror("Error", "Please enter a Bearer Token first.")
+            return
+            
+        self.update_status_safe("Fetching playlists...")
+        threading.Thread(target=self._fetch_playlists_thread, args=(token,), daemon=True).start()
+
+    def _fetch_playlists_thread(self, token):
+        playlists = self.downloader.fetch_playlists(token)
+        self.after(0, lambda: self._show_playlist_browser(playlists))
+
+    def _show_playlist_browser(self, playlists):
+        self.update_status_safe("Ready")
+        if not playlists:
+            messagebox.showinfo("Info", "No playlists found or failed to fetch.")
+            return
+        WorkspaceBrowser(self, playlists, self.on_playlist_selected,
+                        bg_color=self.bg_dark, fg_color=self.fg_primary, title="Select Playlist")
+
+    def on_playlist_selected(self, pl):
+        # pl is a dict
+        pl_id = pl.get("id")
+        name = pl.get("name") or pl.get("title")
+        self.filter_settings["workspace_id"] = pl_id # We reuse workspace_id as it's just an ID passed to API
+        self.filter_settings["workspace_name"] = name
+        self.filter_settings["type"] = "playlist" # Custom type
+        
+        # Note: The downloader needs to know if it's a playlist or workspace to use correct URL?
+        # Actually, in suno_downloader.py, we need to handle "playlist" type if the API endpoint is different.
+        # Currently suno_downloader uses /api/project/{id} for workspace_id.
+        # If playlists use /api/playlist/{id}, we need to update suno_downloader.py.
+        # Let's check suno_downloader.py logic.
+        
+        self.save_config()
+        
+        # Update UI
+        if hasattr(self, 'playlist_btn'):
+            self.playlist_btn.set_text(f"PL: {name[:10]}...")
+        
+        messagebox.showinfo("Playlist Selected", f"Selected playlist: {name}\nClick 'Start Download' or 'Preload' to proceed.")
+
+    def preload_songs(self):
+        print("DEBUG: Preload button clicked")
+        self.add_debug_log("=== Starting Preload ===")
+        
+        token = self.token_var.get().strip()
+        print(f"DEBUG: Token length: {len(token)}")
+        self.add_debug_log(f"Token present: {bool(token)}, length: {len(token)}")
+        
+        if not token:
+            error_msg = "Please enter a Bearer Token."
+            messagebox.showerror("Error", error_msg)
+            self.add_debug_log(f"ERROR: {error_msg}")
             return
 
-        if not self.path_var.get():
-            messagebox.showerror("Error", "Please select a download folder.")
+        download_path = self.path_var.get()
+        print(f"DEBUG: Download path: {download_path}")
+        self.add_debug_log(f"Download path: {download_path}")
+        
+        if not download_path:
+            error_msg = "Please select a download folder."
+            messagebox.showerror("Error", error_msg)
+            self.add_debug_log(f"ERROR: {error_msg}")
             return
 
         self.save_config()
@@ -589,6 +896,9 @@ class DownloaderTab(tk.Frame):
         self.preloaded_songs.clear()
         self.is_preloaded = True
         
+        print(f"DEBUG: Filter settings: {self.filter_settings}")
+        self.add_debug_log(f"Filter settings: {self.filter_settings}")
+        
         # Connect signals
         self.downloader.signals.status_changed.connect(self.update_status_safe)
         self.downloader.signals.download_complete.connect(self.on_preload_complete_safe)
@@ -596,9 +906,11 @@ class DownloaderTab(tk.Frame):
         self.downloader.signals.song_found.connect(self.on_song_found_safe)
         
         # Configure downloader for SCAN ONLY
+        print("DEBUG: Configuring downloader...")
+        self.add_debug_log("Configuring downloader for scan-only mode...")
         self.downloader.configure(
             token=token,
-            directory=self.path_var.get(),
+            directory=download_path,
             max_pages=self.max_pages_var.get(),
             start_page=self.start_page_var.get(),
             organize_by_month=self.organize_var.get(),
@@ -607,18 +919,26 @@ class DownloaderTab(tk.Frame):
             prefer_wav=self.download_wav_var.get(),
             download_delay=self.rate_limit_var.get(),
             filter_settings=self.filter_settings,
-            scan_only=True,
             organize_by_track=self.track_folder_var.get(),
-            stems_only=self.filter_settings.get("stems_only")
+            stems_only=self.filter_settings.get("stems_only"),
+            smart_resume=self.smart_resume_var.get(),
+            scan_only=True  # CRITICAL: Only scan, don't download
         )
         
+        print("DEBUG: Starting downloader thread...")
+        self.add_debug_log("Starting downloader thread...")
         thread = threading.Thread(target=self.downloader.run, daemon=True)
         thread.start()
+        print("DEBUG: Downloader thread started")
+        self.add_debug_log("Downloader thread started - check debug log for progress")
 
     def on_preload_complete_safe(self, success):
         self.after(0, lambda: self.on_preload_complete(success))
 
     def on_preload_complete(self, success):
+        print(f"DEBUG: Preload complete called with success={success}, songs found={len(self.preloaded_songs)}")
+        self.add_debug_log(f"Preload complete: success={success}, songs={len(self.preloaded_songs)}")
+        
         self.toggle_action_buttons(downloading=False)
         self.progress.stop()
         self.progress.set_text("")
@@ -626,14 +946,18 @@ class DownloaderTab(tk.Frame):
         if success:
             self.update_status_safe("Preload Complete")
             self.start_btn.set_text("Download Selected")
-            messagebox.showinfo("Preload Complete", f"Found {len(self.preloaded_songs)} songs.\nUncheck songs you don't want, then click 'Download Selected'.")
+            if len(self.preloaded_songs) > 0:
+                messagebox.showinfo("Preload Complete", f"Found {len(self.preloaded_songs)} songs.\nUncheck songs you don't want, then click 'Download Selected'.")
+            else:
+                messagebox.showwarning("Preload Complete", "Preload finished but no songs were found. Check filters or try a different workspace/playlist.")
         else:
             self.start_btn.set_text("Start Download")
             self.is_preloaded = False # Reset if failed
             self.update_status_safe("Error")
+            print("ERROR: Preload failed - check debug log for details")
+            self.add_debug_log("ERROR: Preload failed - check logs above for error details")
 
     def start_download_thread(self):
-        print("DEBUG: start_download_thread called")
         token = self.token_var.get().strip()
         if not token:
             messagebox.showerror("Error", "Please enter a Bearer Token.")
@@ -688,9 +1012,9 @@ class DownloaderTab(tk.Frame):
             prefer_wav=self.download_wav_var.get(),
             download_delay=self.rate_limit_var.get(),
             filter_settings=self.filter_settings,
-            target_songs=target_songs,
             organize_by_track=self.track_folder_var.get(),
-            stems_only=self.filter_settings.get("stems_only")
+            stems_only=self.filter_settings.get("stems_only"),
+            smart_resume=self.smart_resume_var.get()
         )
         
         thread = threading.Thread(target=self.downloader.run, daemon=True)

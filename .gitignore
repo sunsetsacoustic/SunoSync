@@ -40,10 +40,14 @@ desktop.ini
 
 # Project specific
 config.json
+library_cache.json
+tags.json
+window_state.json
 Suno_Downloads/
 Suno_Browser_Profile/
 *.spec.bak
 *.log
+*.txt
 
 # Build artifacts
 build/
@@ -51,12 +55,14 @@ dist/
 *.pkg
 *.toc
 *.pyz
+*.exe
+*.zip
 
 # Temporary files
 temp_*.html
 *.tmp
 
-
+# Duplicate/old directories
 SunoSyncMac/
-
 SunoSync-Mac/
+

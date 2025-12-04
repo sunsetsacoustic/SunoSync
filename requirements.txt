@@ -6,3 +6,4 @@ colorama>=0.4.6
 python-vlc>=3.0.20
 pyinstaller>=6.0.0
 
+

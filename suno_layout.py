@@ -77,6 +77,10 @@ def create_settings_card(parent, app, base_path):
     toggles_frame = tk.Frame(body, bg=app.bg_card)
     toggles_frame.pack(fill="x", padx=12, pady=5)
     
+    # Configure grid columns to have minimum widths
+    toggles_frame.columnconfigure(0, weight=1, minsize=180)
+    toggles_frame.columnconfigure(1, weight=1, minsize=180)
+    
     # Helper for grid items
     def add_toggle(row, col, text, var, tooltip):
         f = tk.Frame(toggles_frame, bg=app.bg_card)
@@ -98,6 +102,12 @@ def create_settings_card(parent, app, base_path):
 
     app.track_folder_var = tk.BooleanVar(value=False)
     add_toggle(2, 0, "Stem Track Folder", app.track_folder_var, "Create a folder for each track")
+
+    app.smart_resume_var = tk.BooleanVar(value=False)
+    add_toggle(2, 1, "Smart Resume", app.smart_resume_var, "Stop scanning after consecutive pages with no new songs (adaptive: 2-20 pages based on library size)")
+    
+    app.disable_sounds_var = tk.BooleanVar(value=False)
+    add_toggle(3, 0, "Disable Notification Sounds", app.disable_sounds_var, "Turn off Windows alert notification sounds")
     
     return card
 
@@ -142,19 +152,26 @@ def create_scraping_card(parent, app):
     filter_frame = tk.Frame(body, bg=app.bg_card)
     filter_frame.pack(fill="x", padx=12, pady=(0, 12))
     
-    app.filter_btn = RoundedButton(filter_frame, "Filters (Default)", app.open_filters,
+    app.filter_btn = RoundedButton(filter_frame, "Filters", app.open_filters,
                                   bg_color=app.bg_input, fg_color=app.fg_primary,
                                   hover_color=app.bg_dark, font=("Segoe UI", 9),
-                                  width=140, height=36, corner_radius=8, border_color=app.border_subtle)
-    app.filter_btn.pack(side=tk.LEFT, fill="x", expand=True, padx=(0, 8))
+                                  width=95, height=36, corner_radius=8, border_color=app.border_subtle)
+    app.filter_btn.pack(side=tk.LEFT, fill="x", expand=True, padx=(0, 4))
     app.create_tooltip(app.filter_btn, "Configure advanced download filters")
 
-    app.workspace_btn = RoundedButton(filter_frame, "Browse Workspaces", app.open_workspaces,
+    app.workspace_btn = RoundedButton(filter_frame, "Workspaces", app.open_workspaces,
                                      bg_color=app.bg_input, fg_color=app.fg_primary,
                                      hover_color=app.bg_dark, font=("Segoe UI", 9),
-                                     width=140, height=36, corner_radius=8, border_color=app.border_subtle)
-    app.workspace_btn.pack(side=tk.LEFT, fill="x", expand=True)
+                                     width=95, height=36, corner_radius=8, border_color=app.border_subtle)
+    app.workspace_btn.pack(side=tk.LEFT, fill="x", expand=True, padx=(4, 4))
     app.create_tooltip(app.workspace_btn, "Select a specific workspace to download from")
+
+    app.playlist_btn = RoundedButton(filter_frame, "Playlists", app.open_playlists,
+                                     bg_color=app.bg_input, fg_color=app.fg_primary,
+                                     hover_color=app.bg_dark, font=("Segoe UI", 9),
+                                     width=95, height=36, corner_radius=8, border_color=app.border_subtle)
+    app.playlist_btn.pack(side=tk.LEFT, fill="x", expand=True, padx=(4, 0))
+    app.create_tooltip(app.playlist_btn, "Select a specific playlist to download from")
 
     # Preload Button
     preload_frame = tk.Frame(body, bg=app.bg_card)
