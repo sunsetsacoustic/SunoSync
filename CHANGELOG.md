@@ -7,8 +7,15 @@ All notable changes to SunoSync will be documented in this file.
 ### Added
 - **Borderless Window Design**: Modern, frameless window with custom drag functionality and close button
 - **Enhanced Splash Screen**: Improved splash screen timing and visibility - no more brief window flash before splash appears
+- **Linux Support**: Full compatibility with Linux systems (Ubuntu, Debian, Arch, etc.)
 
 ### Fixed
+- **Linux Font Loading**: Cross-platform font detection with fallbacks for DejaVu and Liberation fonts on Linux
+- **Linux Icon Loading**: Platform-specific icon handling (.ico for Windows, .png for Linux/macOS)
+- **PhotoImage Garbage Collection**: Fixed image reference issues that caused TclError on Linux
+- **Cross-Platform Compatibility**: Works with system Python in virtual environments on all platforms
+
+### Changed
 - **Player Widget Sizing**: Fixed audio player being squished - now maintains proper height (160px) using grid layout
 - **Splash Screen Visibility**: Fixed main window showing briefly before splash screen appears
 - **Stop Button**: Enhanced stop functionality to properly halt downloads/preloads and reset UI state

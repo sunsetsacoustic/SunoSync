@@ -4,7 +4,34 @@ This document tracks technical issues and their resolutions for SunoSync V2.
 
 ## Recent Fixes (Latest Session)
 
-### 1. Startup Crash (Infinite Recursion) ✅
+### 1. Linux Compatibility - Font & Icon Loading ✅
+**Problem**: App crashed on Arch Linux with `OSError: cannot open resource` and `TclError: bitmap not defined`  
+**Root Cause**: 
+- Hardcoded Windows font paths (`arial.ttf`) don't exist on Linux
+- `.ico` files not supported on Linux
+- Image references being garbage collected
+
+**Fixes Applied**:
+- **theme_manager.py**: Added cross-platform font detection
+  - Windows: `arial.ttf`, `seguiemj.ttf`
+  - macOS: `Arial.ttf`
+  - Linux: Multiple fallback paths for DejaVu and Liberation fonts
+  - Ultimate fallback: `ImageFont.load_default()`
+
+- **main.py**: Platform-specific icon handling
+  - Windows: Uses `.ico` with `iconbitmap()`
+  - Linux/macOS: Uses `.png` with `iconphoto()` (resized to 32x32)
+  - Silently ignores icon errors (cosmetic)
+
+- **downloader_tab.py**: Fixed PhotoImage garbage collection
+  - Store PIL image before creating PhotoImage
+  - Added `_create_title_image_pil()` helper
+  - Keep reference to prevent garbage collection
+
+**Location**: `theme_manager.py`, `main.py`, `downloader_tab.py`  
+**Status**: ✅ Fixed - App now runs on Arch Linux with system Python
+
+### 2. Startup Crash (Infinite Recursion) ✅
 **Problem**: App crashed silently on startup  
 **Root Cause**: `LibraryTab.update_tree()` had a recursive call to itself with no exit condition  
 **Location**: `library_tab.py` line 367  

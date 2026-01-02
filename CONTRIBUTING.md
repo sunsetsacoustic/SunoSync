@@ -47,9 +47,11 @@ Feature suggestions are welcome! Please open an issue with:
 
 Before submitting a PR:
 - Test on Windows (primary platform)
+- Test on Linux (Ubuntu/Debian/Arch) for cross-platform compatibility
 - Test with different download scenarios
 - Verify metadata embedding works correctly
 - Check that error handling works properly
+- Test with system Python in virtual environments
 
 ## Questions?
 

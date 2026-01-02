@@ -50,12 +50,14 @@ SunoSync V2 is the ultimate desktop manager for your Suno AI music generation. I
 
 ### 🎨 Modern UI & Polish
 *   **Dark Mode:** Sleek, modern dark interface that's easy on the eyes.
+*   **Cross-Platform:** Works on Windows, macOS, and Linux (with full font/icon support).
 *   **Customizable Notifications:** Option to disable Windows alert notification sounds.
 *   **Window State:** Remembers your window size and position between sessions.
 *   **Debug Tools:** Built-in debug log viewer for troubleshooting.
 
 ## 🚀 Getting Started
 
+### Windows
 1.  **Download:** Get the latest `SunoSyncV2.exe` or compile from source (see below).
 2.  **Install VLC:** Ensure you have [VLC Media Player](https://www.videolan.org/) installed (required for audio playback).
 3.  **Run:** Double-click `SunoSyncV2.exe`.
@@ -65,6 +67,29 @@ SunoSync V2 is the ultimate desktop manager for your Suno AI music generation. I
     *   Open Developer Tools (F12) -> Application -> Cookies.
     *   Copy the value of the `__client` cookie.
 5.  **Download:** Paste your token and click **Start Download** or **Preload** to preview first.
+
+### Linux (Ubuntu/Debian/Arch)
+1.  **Install dependencies:**
+    ```bash
+    # Debian/Ubuntu
+    sudo apt-get install python3-tk python3-pil python3-pip vlc
+    
+    # Arch Linux
+    sudo pacman -S python-tk python-pillow python-pip vlc ttf-dejavu
+    ```
+2.  **Clone and setup:**
+    ```bash
+    git clone https://github.com/sunsetsacoustic/SunoSync.git
+    cd SunoSync
+    python -m venv venv
+    source venv/bin/activate
+    pip install -r requirements.txt
+    ```
+3.  **Run:**
+    ```bash
+    python main.py
+    ```
+4.  **Get Token & Download:** Same as Windows steps 4-5.
 
 ## 🔒 Security & VirusTotal Transparency
 
